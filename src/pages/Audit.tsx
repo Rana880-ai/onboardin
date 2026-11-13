@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Check, Download, Loader2, Lock, Paperclip } from
 import SEO from '../components/SEO';
 import ScrollReveal from '../components/ScrollReveal';
 import { trackConversion } from '../lib/analytics';
-import { submitJobApplication, isSupabaseConfigured } from '../lib/supabase';
+import { useLanguage, type Lang } from '../context/LanguageContext';
 
 // ───────────────────────── الإعدادات ─────────────────────────
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
@@ -63,7 +63,7 @@ interface FieldDef {
   rows?: number;
 }
 
-// ───────────────────────── المحتوى ─────────────────────────
+// ───────────────────────── المحتوى (القيم بالإنجليزي: هي اللي بتتحفظ وتتبعت للسيرفر) ─────────────────────────
 const GOVERNORATES = [
   'Cairo', 'Giza', 'Qalyubia', 'Alexandria', 'Sharqia', 'Dakahlia', 'Gharbia', 'Monufia', 'Beheira', 'Kafr El Sheikh',
   'Damietta', 'Port Said', 'Ismailia', 'Suez', 'Fayoum', 'Beni Suef', 'Minya', 'Assiut', 'Sohag', 'Qena', 'Luxor',
@@ -207,14 +207,302 @@ const QUESTION_FIELDS: FieldDef[] = [
 
 const STEP_FIELDS: FieldDef[][] = [PERSONAL_FIELDS, EDUCATION_FIELDS, SKILL_FIELDS, FIT_FIELDS, QUESTION_FIELDS];
 
-const STEPS = [
-  { tab: 'Personal Details', title: 'Personal Details & Contact', desc: 'Basic information to reach you and check that working hours suit you.' },
-  { tab: 'Education & Experience', title: 'Education & Work Experience', desc: 'Your academic qualification, career path, and the nature of your previous responsibilities.' },
-  { tab: 'Skills & Certificates', title: 'Skills & Certificates', desc: 'Select the skills you have, then add languages, software, and certificates.' },
-  { tab: 'Job Fit & Health', title: 'Job Fit & Occupational Health Questions', desc: 'Standard questions to understand working conditions and your ability to perform the duties. This is not a medical diagnosis.' },
-  { tab: 'Review & Consent', title: 'Personal Questions & Application Review', desc: 'We want to understand how you think and what motivates you before the interview.' },
-];
-const LAST = STEPS.length - 1;
+// ───────────────────────── الترجمة العربية ─────────────────────────
+// ترجمة الاختيارات (للعرض بس). القيمة اللي بتتحفظ وتتبعت بتفضل الإنجليزي.
+const OPTION_AR: Record<string, string> = {
+  // المحافظات
+  Cairo: 'القاهرة', Giza: 'الجيزة', Qalyubia: 'القليوبية', Alexandria: 'الإسكندرية', Sharqia: 'الشرقية',
+  Dakahlia: 'الدقهلية', Gharbia: 'الغربية', Monufia: 'المنوفية', Beheira: 'البحيرة', 'Kafr El Sheikh': 'كفر الشيخ',
+  Damietta: 'دمياط', 'Port Said': 'بورسعيد', Ismailia: 'الإسماعيلية', Suez: 'السويس', Fayoum: 'الفيوم',
+  'Beni Suef': 'بني سويف', Minya: 'المنيا', Assiut: 'أسيوط', Sohag: 'سوهاج', Qena: 'قنا', Luxor: 'الأقصر',
+  Aswan: 'أسوان', Matrouh: 'مطروح', 'Red Sea': 'البحر الأحمر', 'New Valley': 'الوادي الجديد',
+  'North Sinai': 'شمال سيناء', 'South Sinai': 'جنوب سيناء',
+  // المستويات
+  Beginner: 'مبتدئ', Intermediate: 'متوسط', 'Very good': 'جيد جدًا', Advanced: 'متقدم',
+  // المهارات
+  'Communication & customer service': 'التواصل وخدمة العملاء',
+  'Sales & persuasion': 'المبيعات والإقناع',
+  'Team management': 'إدارة الفريق',
+  'Problem solving': 'حل المشكلات',
+  'Time management': 'إدارة الوقت',
+  'Working under pressure': 'العمل تحت الضغط',
+  'Inventory management': 'إدارة المخزون',
+  'Stock counting & expiry control': 'جرد المخزون ومراقبة تواريخ الصلاحية',
+  'Microsoft Office': 'مايكروسوفت أوفيس',
+  'Excel & data analysis': 'إكسل وتحليل البيانات',
+  'Digital marketing': 'التسويق الرقمي',
+  'Report writing': 'كتابة التقارير',
+  'Training & coaching': 'التدريب والتوجيه',
+  Negotiation: 'التفاوض',
+  'Field work': 'العمل الميداني',
+  // النوع
+  Male: 'ذكر', Female: 'أنثى', 'Prefer not to say': 'أفضّل عدم الإفصاح',
+  // الوظائف
+  Pharmacist: 'صيدلي',
+  'Pharmacy Assistant': 'مساعد صيدلي',
+  'Inventory / Supply Chain Officer': 'مسؤول مخزون / سلاسل إمداد',
+  'Pharmacy Operations Officer': 'مسؤول عمليات الصيدليات',
+  'Call Center Agent': 'موظف مركز اتصال',
+  'Sales & Business Development': 'المبيعات وتطوير الأعمال',
+  'Human Resources': 'الموارد البشرية',
+  'Marketing / Social Media': 'التسويق / السوشيال ميديا',
+  'Graphic Designer / Video Editor': 'مصمم جرافيك / مونتير فيديو',
+  Other: 'أخرى',
+  // المصدر
+  Facebook: 'فيسبوك', LinkedIn: 'لينكدإن', 'Employee referral': 'ترشيح من موظف', 'Job board': 'موقع وظائف',
+  'Visit / personal acquaintance': 'زيارة / معرفة شخصية',
+  // المؤهل
+  'High school / Technical secondary': 'ثانوية عامة / ثانوي فني',
+  Diploma: 'دبلوم',
+  'Intermediate institute': 'معهد متوسط',
+  'Bachelor of Pharmacy': 'بكالوريوس صيدلة',
+  'Bachelor of Commerce / Business': 'بكالوريوس تجارة / إدارة أعمال',
+  'Bachelor (other field)': 'بكالوريوس (تخصص آخر)',
+  'Postgraduate studies': 'دراسات عليا',
+  // سنوات الخبرة
+  'No experience': 'بدون خبرة',
+  'Less than 1 year': 'أقل من سنة',
+  '1–2 years': 'من سنة إلى سنتين',
+  '3–5 years': 'من 3 إلى 5 سنوات',
+  '6–10 years': 'من 6 إلى 10 سنوات',
+  'More than 10 years': 'أكثر من 10 سنوات',
+  // الإتاحة
+  'Available immediately': 'متاح فورًا',
+  'Within a week': 'خلال أسبوع',
+  'Within two weeks': 'خلال أسبوعين',
+  'Within a month': 'خلال شهر',
+  'More than a month': 'أكثر من شهر',
+  // نعم / لا وما شابه
+  Yes: 'نعم', No: 'لا', 'Not applicable': 'لا ينطبق',
+  'After my approval at a later stage': 'بعد موافقتي في مرحلة لاحقة',
+  'Yes, with schedule preferences or constraints': 'نعم، مع تفضيلات أو قيود في الجدول',
+  'Depends on the schedule': 'حسب الجدول',
+  'Yes, with distance or timing constraints': 'نعم، مع قيود في المسافة أو التوقيت',
+  Suitable: 'مناسب',
+  'Suitable with conditions / depending on schedule': 'مناسب بشروط / حسب الجدول',
+  'Not suitable': 'غير مناسب',
+  "I don't know the job's nature yet": 'لا أعرف طبيعة الوظيفة بعد',
+  'Yes, without additional arrangements': 'نعم، دون ترتيبات إضافية',
+  'Yes, with suitable arrangements or accommodations': 'نعم، مع ترتيبات أو تسهيلات مناسبة',
+  'I need to know the duty details first': 'أحتاج لمعرفة تفاصيل المهام أولًا',
+  'I prefer to discuss it confidentially with HR': 'أفضّل مناقشته بسرية مع الموارد البشرية',
+  'I prefer not to answer now': 'أفضّل عدم الإجابة الآن',
+  'Yes, I prefer to discuss it confidentially': 'نعم، أفضّل مناقشته بسرية',
+  // وقت التواصل والتقييم
+  Morning: 'صباحًا', Noon: 'ظهرًا', Evening: 'مساءً', 'Any time': 'في أي وقت',
+  'Depending on the nature of the test': 'حسب طبيعة الاختبار',
+};
+
+const tr = (value: string, lang: Lang) => (lang === 'ar' ? OPTION_AR[value] ?? value : value);
+
+// عناوين الحقول بالعربي
+const FIELD_AR: Record<TextField, { label: string; placeholder?: string }> = {
+  fullName: { label: 'الاسم بالكامل', placeholder: 'الاسم الكامل كما في بطاقة الرقم القومي' },
+  phone: { label: 'رقم الهاتف الأساسي', placeholder: '01xxxxxxxxx' },
+  whatsapp: { label: 'رقم الواتساب (إن كان مختلفًا)' },
+  email: { label: 'البريد الإلكتروني', placeholder: 'name@example.com' },
+  birthDate: { label: 'تاريخ الميلاد' },
+  gender: { label: 'النوع (اختياري)' },
+  address: { label: 'العنوان بالتفصيل', placeholder: 'المحافظة – المنطقة – الشارع' },
+  governorate: { label: 'المحافظة' },
+  landmark: { label: 'أقرب علامة مميزة', placeholder: 'تساعدنا على تقدير مدة وصولك' },
+  job: { label: 'الوظيفة المتقدم لها' },
+  source: { label: 'كيف عرفت بهذه الوظيفة؟' },
+  qualification: { label: 'أعلى مؤهل دراسي' },
+  university: { label: 'الجامعة / المعهد' },
+  major: { label: 'التخصص' },
+  graduationYear: { label: 'سنة التخرج' },
+  experienceYears: { label: 'إجمالي سنوات الخبرة' },
+  lastEmployer: { label: 'آخر جهة عمل' },
+  lastTitle: { label: 'آخر مسمى وظيفي' },
+  lastSalary: { label: 'آخر راتب (اختياري)', placeholder: 'جنيه' },
+  expectedSalary: { label: 'الراتب المتوقع', placeholder: 'جنيه' },
+  availability: { label: 'فترة الإشعار / موعد الإتاحة' },
+  currentlyWorking: { label: 'هل تعمل حاليًا؟' },
+  pharmacyYears: { label: 'سنوات الخبرة في الصيدليات (إن وجدت)' },
+  experienceDetails: {
+    label: 'ملخص خبراتك ومسؤولياتك وإنجازاتك',
+    placeholder: 'اذكر أماكن العمل والمدة والمهام ونطاق المسؤولية وأهم نتائجك...',
+  },
+  leavingReason: { label: 'سبب ترك آخر وظيفة / البحث عن فرصة جديدة' },
+  referencePermission: { label: 'هل يمكننا التواصل مع مديرك السابق كمرجع مهني؟' },
+  english: { label: 'مستوى اللغة الإنجليزية' },
+  computer: { label: 'مستوى استخدام الكمبيوتر' },
+  systems: {
+    label: 'البرامج أو الأنظمة التي تجيد استخدامها',
+    placeholder: 'Excel، نقاط البيع، ERP، برامج الصيدليات، CRM...',
+  },
+  certificates: {
+    label: 'الدورات التدريبية والشهادات (اسم الدورة، الجهة، السنة)',
+    placeholder: 'اكتب كل شهادة أو دورة في سطر منفصل',
+  },
+  otherLanguages: { label: 'لغات أخرى ومستواك في كل منها' },
+  portfolio: { label: 'رابط LinkedIn أو معرض أعمالك (إن وجد)', placeholder: 'https://' },
+  shiftAbility: { label: 'هل يمكنك الالتزام بساعات العمل المحددة للوظيفة؟' },
+  shiftWork: { label: 'هل تناسبك الورديات إذا تطلبت الوظيفة ذلك؟' },
+  commute: { label: 'هل يمكنك الانتقال إلى مقر العمل بانتظام؟' },
+  fieldWork: { label: 'هل تتطلب الوظيفة سفرًا أو زيارات ميدانية؟ وهل يناسبك ذلك؟' },
+  essentialDuties: { label: 'هل يمكنك أداء المهام الأساسية الموصوفة للوظيفة؟' },
+  accommodation: { label: 'هل تحتاج إلى أي ترتيبات أو تسهيلات في مكان العمل لأداء مهامك؟' },
+  accommodationDetails: {
+    label: 'إن كانت هناك ترتيبات مطلوبة، اذكر طبيعتها المتعلقة بالعمل فقط (اختياري)',
+    placeholder: 'مثال: كرسي مناسب، تعديل في الجدول، سهولة الوصول إلى مكان العمل... دون ذكر أي تشخيص طبي',
+  },
+  safetyDiscussion: {
+    label: 'هل هناك أي أمر يتعلق بأداء مهام معينة بأمان في بيئة العمل تود مناقشته بسرية مع الموارد البشرية؟',
+  },
+  workConditions: { label: 'أي ملاحظات إضافية عن ظروف العمل المناسبة؟' },
+  whyUs: { label: 'لماذا تريد الانضمام إلى الجميعي فارما؟' },
+  strengths: { label: 'ما هي أهم ثلاث نقاط قوة لديك؟' },
+  development: { label: 'ما المهارة التي تعمل على تطويرها حاليًا؟' },
+  problemExample: { label: 'صف مشكلة واجهتك في العمل وكيف تعاملت معها.' },
+  contactTime: { label: 'الوقت المفضل للتواصل' },
+  assessment: { label: 'هل أنت مستعد لإجراء اختبار أو مقابلة عملية؟' },
+};
+
+// الخطوات
+const STEPS_I18N = {
+  en: [
+    { tab: 'Personal Details', title: 'Personal Details & Contact', desc: 'Basic information to reach you and check that working hours suit you.' },
+    { tab: 'Education & Experience', title: 'Education & Work Experience', desc: 'Your academic qualification, career path, and the nature of your previous responsibilities.' },
+    { tab: 'Skills & Certificates', title: 'Skills & Certificates', desc: 'Select the skills you have, then add languages, software, and certificates.' },
+    { tab: 'Job Fit & Health', title: 'Job Fit & Occupational Health Questions', desc: 'Standard questions to understand working conditions and your ability to perform the duties. This is not a medical diagnosis.' },
+    { tab: 'Review & Consent', title: 'Personal Questions & Application Review', desc: 'We want to understand how you think and what motivates you before the interview.' },
+  ],
+  ar: [
+    { tab: 'البيانات الشخصية', title: 'البيانات الشخصية وبيانات التواصل', desc: 'معلومات أساسية للتواصل معك والتأكد من ملاءمة ساعات العمل.' },
+    { tab: 'التعليم والخبرة', title: 'التعليم والخبرة العملية', desc: 'مؤهلك الدراسي ومسارك المهني وطبيعة مسؤولياتك السابقة.' },
+    { tab: 'المهارات والشهادات', title: 'المهارات والشهادات', desc: 'اختر المهارات التي تمتلكها، ثم أضف اللغات والبرامج والشهادات.' },
+    { tab: 'ملاءمة الوظيفة والصحة', title: 'أسئلة ملاءمة الوظيفة والصحة المهنية', desc: 'أسئلة قياسية لفهم ظروف العمل وقدرتك على أداء المهام. هذا ليس تشخيصًا طبيًا.' },
+    { tab: 'المراجعة والموافقة', title: 'أسئلة شخصية ومراجعة الطلب', desc: 'نريد أن نفهم طريقة تفكيرك وما يحفزك قبل المقابلة.' },
+  ],
+};
+const LAST = STEPS_I18N.en.length - 1;
+
+// باقي النصوص
+const uiEn = {
+  seoTitle: 'Careers | Join the Aljumeiy Pharma Team',
+  seoDesc:
+    'Apply to join the Aljumeiy Pharma team. Complete our short application form covering your details, experience, skills, and job fit.',
+  heroBadge: 'Join Our Team',
+  heroTitle: 'Start Your Career Journey With Us',
+  heroText:
+    'Fill in the details below accurately. We use your answers to understand your experience and skills and how well they fit the role. Our recruitment team will contact you when you move to the next stage.',
+  heroPrivacy: 'Your data is confidential and used for recruitment only',
+  heroSteps: '5 simple steps',
+  stepsLabel: 'Application steps',
+  progressLabel: 'Application progress',
+  required: 'This field is required.',
+  selectPh: 'Select',
+  consentError: 'Please tick this box to continue.',
+  stepStatus: (n: number, total: number, title: string) => `Step ${n} of ${total}: ${title}`,
+  back: 'Back',
+  next: 'Next',
+  submit: 'Submit Application',
+  sending: 'Sending...',
+  genericError: 'Something went wrong. Please try again.',
+  networkError: 'We could not reach the server. Please check your connection and try again.',
+  successTitle: 'Application Submitted Successfully!',
+  successText:
+    'Thank you for your interest in joining the Aljumeiy Pharma team. Please keep the application number shown below.',
+  submitAnother: 'Submit another application',
+  skillsLabel: 'Professional skills (select all that apply)',
+  attachTitle: 'Attach CV or certificates (optional)',
+  chooseFiles: 'Choose files',
+  attachNote: 'Only the names of the selected files are included with your application.',
+  privacyBold: 'Important privacy note:',
+  privacyText:
+    "Do not mention diagnoses, sensitive medical details, or medications. We only need to know whether any job requirements or supportive arrangements are needed to perform the job's duties safely.",
+  fitNote:
+    'These answers will not be used for automatic exclusion, and you are not required to disclose a medical diagnosis. Any occupational fitness assessment, if required by the nature of the role, is carried out separately and appropriately by a qualified party.',
+  consentHeading: 'Declaration of accuracy and consent',
+  accuracyConsent:
+    'I declare that the information I entered is accurate to the best of my knowledge, and I agree to its use and to being contacted about job opportunities at Aljumeiy Pharma.',
+  privacyConsent:
+    'I understand that my data will be used for recruitment purposes only, and that any sensitive job-related information I provide is optional and treated confidentially.',
+  beforeBold: 'Before submitting:',
+  beforeText:
+    'Review your phone number and email, and make sure your experience and skills are complete. A summary of your data is shown below before saving.',
+  reviewTitle: 'Summary of key details',
+  review: {
+    name: 'Name',
+    phone: 'Phone',
+    email: 'Email',
+    position: 'Position',
+    qualification: 'Qualification',
+    years: 'Years of experience',
+    salary: 'Expected salary',
+    skills: 'Skills',
+    experience: 'Experience',
+    arrangements: 'Workplace arrangements',
+  },
+  egp: 'EGP',
+  listSep: ', ',
+};
+
+type UIText = typeof uiEn;
+
+const uiAr: UIText = {
+  seoTitle: 'الوظائف | انضم إلى فريق الجميعي فارما',
+  seoDesc:
+    'قدّم طلبك للانضمام إلى فريق الجميعي فارما. أكمل نموذج التقديم المختصر الذي يشمل بياناتك وخبراتك ومهاراتك وملاءمتك للوظيفة.',
+  heroBadge: 'انضم إلى فريقنا',
+  heroTitle: 'ابدأ رحلتك المهنية معنا',
+  heroText:
+    'املأ البيانات أدناه بدقة. نستخدم إجاباتك لفهم خبرتك ومهاراتك ومدى ملاءمتها للوظيفة. سيتواصل معك فريق التوظيف عند انتقالك إلى المرحلة التالية.',
+  heroPrivacy: 'بياناتك سرية وتُستخدم لأغراض التوظيف فقط',
+  heroSteps: '5 خطوات بسيطة',
+  stepsLabel: 'خطوات التقديم',
+  progressLabel: 'تقدم الطلب',
+  required: 'هذا الحقل مطلوب.',
+  selectPh: 'اختر',
+  consentError: 'من فضلك فعّل هذا الاختيار للمتابعة.',
+  stepStatus: (n: number, total: number, title: string) => `الخطوة ${n} من ${total}: ${title}`,
+  back: 'رجوع',
+  next: 'التالي',
+  submit: 'إرسال الطلب',
+  sending: 'جاري الإرسال...',
+  genericError: 'حدث خطأ ما. من فضلك حاول مرة أخرى.',
+  networkError: 'تعذّر الوصول إلى الخادم. تأكد من اتصالك بالإنترنت وحاول مرة أخرى.',
+  successTitle: 'تم إرسال طلبك بنجاح!',
+  successText:
+    'شكرًا لاهتمامك بالانضمام إلى فريق الجميعي فارما. من فضلك احتفظ برقم الطلب الظاهر أدناه.',
+  submitAnother: 'تقديم طلب آخر',
+  skillsLabel: 'المهارات المهنية (اختر كل ما ينطبق)',
+  attachTitle: 'أرفق السيرة الذاتية أو الشهادات (اختياري)',
+  chooseFiles: 'اختر الملفات',
+  attachNote: 'يتم إرفاق أسماء الملفات المختارة فقط مع طلبك.',
+  privacyBold: 'ملاحظة مهمة بخصوص الخصوصية:',
+  privacyText:
+    'لا تذكر أي تشخيصات أو تفاصيل طبية حساسة أو أدوية. نحتاج فقط أن نعرف إن كانت هناك متطلبات للوظيفة أو ترتيبات داعمة لازمة لأداء مهام الوظيفة بأمان.',
+  fitNote:
+    'لن تُستخدم هذه الإجابات في الاستبعاد التلقائي، ولست مطالبًا بالإفصاح عن أي تشخيص طبي. وأي تقييم للياقة المهنية، إن تطلبته طبيعة الوظيفة، يتم بشكل منفصل ومناسب بواسطة جهة مؤهلة.',
+  consentHeading: 'إقرار بصحة البيانات وموافقة',
+  accuracyConsent:
+    'أُقرّ بأن المعلومات التي أدخلتها صحيحة على حد علمي، وأوافق على استخدامها وعلى التواصل معي بشأن فرص العمل في الجميعي فارما.',
+  privacyConsent:
+    'أفهم أن بياناتي ستُستخدم لأغراض التوظيف فقط، وأن أي معلومات حساسة متعلقة بالوظيفة أقدمها هي اختيارية وتُعامل بسرية.',
+  beforeBold: 'قبل الإرسال:',
+  beforeText:
+    'راجع رقم هاتفك وبريدك الإلكتروني، وتأكد من اكتمال خبراتك ومهاراتك. يظهر أدناه ملخص لبياناتك قبل الحفظ.',
+  reviewTitle: 'ملخص أهم البيانات',
+  review: {
+    name: 'الاسم',
+    phone: 'الهاتف',
+    email: 'البريد الإلكتروني',
+    position: 'الوظيفة',
+    qualification: 'المؤهل',
+    years: 'سنوات الخبرة',
+    salary: 'الراتب المتوقع',
+    skills: 'المهارات',
+    experience: 'الخبرة',
+    arrangements: 'ترتيبات مكان العمل',
+  },
+  egp: 'جنيه',
+  listSep: '، ',
+};
+
+const UI: Record<Lang, UIText> = { en: uiEn, ar: uiAr };
 
 // ───────────────────────── دوال مساعدة ─────────────────────────
 const missingFields = (data: FormState, step: number): RequiredKey[] => {
@@ -257,6 +545,9 @@ const download = (name: string, content: string, type: string) => {
 const INPUT_BASE =
   'w-full p-3.5 rounded-xl border text-sm font-medium bg-white text-[#171717] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#C8202F] focus:border-transparent transition-all';
 
+// الحقول اللي محتواها أرقام/إيميل/روابط بتفضل LTR حتى في العربي
+const LTR_TYPES = ['tel', 'email', 'url', 'number', 'date'];
+
 interface FieldControlProps {
   def: FieldDef;
   value: string;
@@ -266,23 +557,30 @@ interface FieldControlProps {
 }
 
 const FieldControl = React.memo(function FieldControl({ def, value, invalid, onChange, variants }: FieldControlProps) {
+  const { lang } = useLanguage();
+  const ui = UI[lang];
+
   const id = `f-${def.name}`;
+  const label = lang === 'ar' ? FIELD_AR[def.name].label : def.label;
+  const placeholder = lang === 'ar' ? FIELD_AR[def.name].placeholder : def.placeholder;
+  const ltrInput = LTR_TYPES.includes(def.type ?? '');
+
   const shared = {
     id,
     name: def.name,
     required: def.required,
     'aria-invalid': invalid || undefined,
     'aria-describedby': invalid ? `${id}-error` : undefined,
-    className: `${INPUT_BASE} ${invalid ? 'border-[#C8202F] ring-1 ring-[#C8202F]/30' : 'border-gray-300'}`,
+    className: `${INPUT_BASE} ${ltrInput ? 'rtl:text-right' : ''} ${invalid ? 'border-[#C8202F] ring-1 ring-[#C8202F]/30' : 'border-gray-300'}`,
   };
 
   let control: React.ReactNode;
   if (def.type === 'select') {
     control = (
       <select {...shared} value={value} onChange={(e) => onChange(def.name, e.target.value)}>
-        <option value="">Select</option>
+        <option value="">{ui.selectPh}</option>
         {def.options?.map((o) => (
-          <option key={o} value={o}>{o}</option>
+          <option key={o} value={o}>{tr(o, lang)}</option>
         ))}
       </select>
     );
@@ -292,7 +590,7 @@ const FieldControl = React.memo(function FieldControl({ def, value, invalid, onC
         {...shared}
         rows={def.rows ?? 4}
         value={value}
-        placeholder={def.placeholder}
+        placeholder={placeholder}
         onChange={(e) => onChange(def.name, e.target.value)}
       />
     );
@@ -301,8 +599,9 @@ const FieldControl = React.memo(function FieldControl({ def, value, invalid, onC
       <input
         {...shared}
         type={def.type ?? 'text'}
+        dir={ltrInput ? 'ltr' : undefined}
         value={value}
-        placeholder={def.placeholder}
+        placeholder={placeholder}
         min={def.min}
         max={def.max}
         onChange={(e) => onChange(def.name, e.target.value)}
@@ -313,13 +612,13 @@ const FieldControl = React.memo(function FieldControl({ def, value, invalid, onC
   return (
     <motion.div variants={variants} className={def.full ? 'sm:col-span-2' : ''}>
       <label htmlFor={id} className="block text-xs font-bold text-gray-700 mb-1.5">
-        {def.label}
+        {label}
         {def.required && <span className="text-[#C8202F]" aria-hidden="true"> *</span>}
       </label>
       {control}
       {invalid && (
         <p id={`${id}-error`} role="alert" className="mt-1.5 text-xs font-semibold text-[#C8202F]">
-          This field is required.
+          {ui.required}
         </p>
       )}
     </motion.div>
@@ -357,6 +656,9 @@ const CheckBox: React.FC<{ on: boolean }> = ({ on }) => {
 // ───────────────────────── الصفحة ─────────────────────────
 export const Audit: React.FC = () => {
   const reduce = useReducedMotion();
+  const { lang, isRTL } = useLanguage();
+  const ui = UI[lang];
+  const steps = STEPS_I18N[lang];
 
   const [data, setData] = useState<FormState>(INITIAL);
   const [page, setPage] = useState(0);
@@ -370,13 +672,12 @@ export const Audit: React.FC = () => {
 
   const topRef = useRef<HTMLDivElement>(null);
   const stepRef = useRef<HTMLElement>(null);
-  const tabsRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const pendingFocus = useRef<string | null>(null);
   const firstRender = useRef(true);
   const honeypot = useRef<HTMLInputElement>(null); // حقل مخفي لصد البوتات
 
-  // ─── الأنيميشن (بيتعطل لو المستخدم مفعّل reduced motion) ───
+  // ─── الأنيميشن (بيتعطل لو المستخدم مفعّل reduced motion، وبيتعكس في العربي) ───
   const itemV: Variants = useMemo(
     () => ({
       hidden: { opacity: 0, y: reduce ? 0 : 14 },
@@ -391,27 +692,25 @@ export const Audit: React.FC = () => {
     }),
     [reduce]
   );
-  const stepV: Variants = useMemo(
-    () => ({
-      enter: (d: number) => ({ opacity: 0, x: reduce ? 0 : d * 32 }),
+  const stepV: Variants = useMemo(() => {
+    const sign = isRTL ? -1 : 1;
+    return {
+      enter: (d: number) => ({ opacity: 0, x: reduce ? 0 : d * 32 * sign }),
       center: { opacity: 1, x: 0, transition: { duration: reduce ? 0.01 : 0.35, ease: EASE } },
-      exit: (d: number) => ({ opacity: 0, x: reduce ? 0 : -d * 32, transition: { duration: reduce ? 0.01 : 0.18 } }),
-    }),
-    [reduce]
-  );
+      exit: (d: number) => ({ opacity: 0, x: reduce ? 0 : -d * 32 * sign, transition: { duration: reduce ? 0.01 : 0.18 } }),
+    };
+  }, [reduce, isRTL]);
 
-  // لما الخطوة تتغير، التاب النشطة تتوسّط في الشريط (مهم على الموبايل)
+  // لما الخطوة تتغير، التاب النشطة تتوسّط في الشريط (مهم على الموبايل). scrollIntoView شغال في الاتجاهين
   useEffect(() => {
     if (firstRender.current) {
       firstRender.current = false;
       return;
     }
-    const box = tabsRef.current;
-    const tab = tabRefs.current[page];
-    if (!box || !tab) return;
-    box.scrollTo({
-      left: tab.offsetLeft - (box.clientWidth - tab.clientWidth) / 2,
+    tabRefs.current[page]?.scrollIntoView({
       behavior: reduce ? 'auto' : 'smooth',
+      inline: 'center',
+      block: 'nearest',
     });
   }, [page, reduce]);
 
@@ -492,29 +791,18 @@ export const Audit: React.FC = () => {
 
   const finishSubmit = async () => {
     if (sending) return;
-    if (honeypot.current?.value) return;
     setSending(true);
     setSendError(null);
     try {
-      let id: string;
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, website: honeypot.current?.value ?? '' }),
+      });
+      const json = await res.json().catch(() => ({} as { id?: string; error?: string }));
+      if (!res.ok) throw new Error(json.error || ui.genericError);
 
-      if (isSupabaseConfigured) {
-        const { data: resData, error: sbError } = await submitJobApplication(data);
-        if (sbError) throw new Error(sbError.message || 'Failed to submit application.');
-        id = resData?.id || `AJ-${Date.now().toString().slice(-8)}`;
-      } else if (import.meta.env.VITE_API_URL) {
-        const res = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...data, website: honeypot.current?.value ?? '' }),
-        });
-        const json = await res.json().catch(() => ({} as { id?: string; error?: string }));
-        if (!res.ok) throw new Error(json.error || 'Something went wrong. Please try again.');
-        id = json.id || `AJ-${Date.now().toString().slice(-8)}`;
-      } else {
-        await new Promise((r) => setTimeout(r, 700));
-        id = `AJ-${Date.now().toString().slice(-8)}`;
-      }
+      const id: string = json.id || `AJ-${Date.now().toString().slice(-8)}`;
 
       if (SHOW_HR_WORKSPACE) {
         const app: Application = { ...data, id, submittedAt: new Date().toLocaleString('en-GB') };
@@ -528,14 +816,10 @@ export const Audit: React.FC = () => {
       }
 
       setSubmittedId(id);
-      trackConversion('application');
       topRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     } catch (err) {
-      setSendError(
-        err instanceof Error && err.name !== 'TypeError'
-          ? err.message
-          : 'We could not reach the server. Please check your connection and try again.'
-      );
+      // TypeError = مشكلة اتصال (السيرفر مش شغال أو النت قاطع)
+      setSendError(err instanceof Error && err.name !== 'TypeError' ? err.message : ui.networkError);
     } finally {
       setSending(false);
     }
@@ -586,7 +870,7 @@ export const Audit: React.FC = () => {
   const renderNotice = (content: React.ReactNode) => (
     <motion.div
       variants={itemV}
-      className="bg-red-50 border-l-4 border-[#C8202F] rounded-lg px-4 py-3 text-xs sm:text-sm text-gray-800 leading-relaxed"
+      className="bg-red-50 border-s-4 border-[#C8202F] rounded-lg px-4 py-3 text-xs sm:text-sm text-gray-800 leading-relaxed"
     >
       {content}
     </motion.div>
@@ -613,7 +897,7 @@ export const Audit: React.FC = () => {
         <CheckBox on={on} />
         <span>
           {text} <span className="text-[#C8202F]" aria-hidden="true">*</span>
-          {bad && <span className="block mt-1 text-xs font-semibold text-[#C8202F]" role="alert">Please tick this box to continue.</span>}
+          {bad && <span className="block mt-1 text-xs font-semibold text-[#C8202F]" role="alert">{ui.consentError}</span>}
         </span>
       </label>
     );
@@ -621,7 +905,7 @@ export const Audit: React.FC = () => {
 
   const renderSkills = () => (
     <motion.div variants={itemV} role="group" aria-labelledby="skills-label">
-      <p id="skills-label" className="text-xs font-bold text-gray-700 mb-3">Professional skills (select all that apply)</p>
+      <p id="skills-label" className="text-xs font-bold text-gray-700 mb-3">{ui.skillsLabel}</p>
       <motion.div variants={staggerV} className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {SKILLS.map((skill) => {
           const on = data.skills.includes(skill);
@@ -636,7 +920,7 @@ export const Audit: React.FC = () => {
             >
               <input type="checkbox" className="sr-only" checked={on} onChange={() => toggleSkill(skill)} />
               <CheckBox on={on} />
-              <span>{skill}</span>
+              <span>{tr(skill, lang)}</span>
             </motion.label>
           );
         })}
@@ -646,13 +930,13 @@ export const Audit: React.FC = () => {
 
   const renderAttachments = () => (
     <motion.div variants={itemV}>
-      <p className="text-xs font-bold text-gray-700 mb-1.5">Attach CV or certificates (optional)</p>
+      <p className="text-xs font-bold text-gray-700 mb-1.5">{ui.attachTitle}</p>
       <label
         htmlFor="f-attachments"
         className="inline-flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-700 cursor-pointer hover:border-[#C8202F] hover:text-[#C8202F] transition-colors focus-within:ring-2 focus-within:ring-[#C8202F]/50"
       >
         <Paperclip size={16} aria-hidden="true" />
-        <span>Choose files</span>
+        <span>{ui.chooseFiles}</span>
         <input
           id="f-attachments"
           type="file"
@@ -665,13 +949,11 @@ export const Audit: React.FC = () => {
           }}
         />
       </label>
-      <p className="mt-2 text-xs text-gray-500">
-        Only the names of the selected files are included with your application.
-      </p>
+      <p className="mt-2 text-xs text-gray-500">{ui.attachNote}</p>
       {data.files.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {data.files.map((name) => (
-            <li key={name} className="text-xs font-semibold bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full">
+            <li key={name} dir="ltr" className="text-xs font-semibold bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full">
               {name}
             </li>
           ))}
@@ -681,26 +963,27 @@ export const Audit: React.FC = () => {
   );
 
   const renderReview = () => {
+    const r = ui.review;
     const pairs: [string, string][] = [
-      ['Name', data.fullName],
-      ['Phone', data.phone],
-      ['Email', data.email],
-      ['Position', data.job],
-      ['Qualification', data.qualification],
-      ['Years of experience', data.experienceYears],
-      ['Expected salary', data.expectedSalary ? `${data.expectedSalary} EGP` : ''],
-      ['Skills', data.skills.join(', ')],
-      ['Experience', data.experienceDetails],
-      ['Workplace arrangements', data.accommodation],
+      [r.name, data.fullName],
+      [r.phone, data.phone],
+      [r.email, data.email],
+      [r.position, tr(data.job, lang)],
+      [r.qualification, tr(data.qualification, lang)],
+      [r.years, tr(data.experienceYears, lang)],
+      [r.salary, data.expectedSalary ? `${data.expectedSalary} ${ui.egp}` : ''],
+      [r.skills, data.skills.map((s) => tr(s, lang)).join(ui.listSep)],
+      [r.experience, data.experienceDetails],
+      [r.arrangements, tr(data.accommodation, lang)],
     ];
     return (
       <motion.div variants={itemV} className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
-        <h3 className="text-sm font-extrabold text-[#171717] mb-3">Summary of key details</h3>
+        <h3 className="text-sm font-extrabold text-[#171717] mb-3">{ui.reviewTitle}</h3>
         <dl className="space-y-2">
           {pairs.map(([k, v]) => (
             <div key={k} className="text-xs sm:text-sm leading-relaxed">
               <dt className="inline font-bold text-gray-900">{k}: </dt>
-              <dd className="inline text-gray-700 break-words">{v || '—'}</dd>
+              <dd className="inline text-gray-700 break-words"><bdi>{v || '—'}</bdi></dd>
             </div>
           ))}
         </dl>
@@ -715,8 +998,8 @@ export const Audit: React.FC = () => {
           {String(page + 1).padStart(2, '0')}
         </span>
         <div>
-          <h2 className="text-xl sm:text-2xl font-extrabold text-[#171717]">{STEPS[page].title}</h2>
-          <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">{STEPS[page].desc}</p>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-[#171717]">{steps[page].title}</h2>
+          <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">{steps[page].desc}</p>
         </div>
       </motion.div>
     );
@@ -741,19 +1024,11 @@ export const Audit: React.FC = () => {
           <>
             {renderNotice(
               <>
-                <b>Important privacy note:</b> Do not mention diagnoses, sensitive medical details, or medications. We only
-                need to know whether any job requirements or supportive arrangements are needed to perform the job&rsquo;s
-                duties safely.
+                <b>{ui.privacyBold}</b> {ui.privacyText}
               </>
             )}
             {renderGrid(FIT_FIELDS)}
-            {renderNotice(
-              <>
-                These answers will not be used for automatic exclusion, and you are not required to disclose a medical
-                diagnosis. Any occupational fitness assessment, if required by the nature of the role, is carried out
-                separately and appropriately by a qualified party.
-              </>
-            )}
+            {renderNotice(ui.fitNote)}
           </>
         )}
 
@@ -761,20 +1036,13 @@ export const Audit: React.FC = () => {
           <>
             {renderGrid(QUESTION_FIELDS)}
             <motion.div variants={itemV} className="rounded-2xl border border-gray-200 bg-gray-50 p-5 space-y-3">
-              <h3 className="text-sm font-extrabold text-[#171717]">Declaration of accuracy and consent</h3>
-              {renderConsent(
-                'accuracyConsent',
-                'I declare that the information I entered is accurate to the best of my knowledge, and I agree to its use and to being contacted about job opportunities at Aljumeiy Pharma.'
-              )}
-              {renderConsent(
-                'privacyConsent',
-                'I understand that my data will be used for recruitment purposes only, and that any sensitive job-related information I provide is optional and treated confidentially.'
-              )}
+              <h3 className="text-sm font-extrabold text-[#171717]">{ui.consentHeading}</h3>
+              {renderConsent('accuracyConsent', ui.accuracyConsent)}
+              {renderConsent('privacyConsent', ui.privacyConsent)}
             </motion.div>
             {renderNotice(
               <>
-                <b>Before submitting:</b> Review your phone number and email, and make sure your experience and skills are
-                complete. A summary of your data is shown below before saving.
+                <b>{ui.beforeBold}</b> {ui.beforeText}
               </>
             )}
             {renderReview()}
@@ -785,18 +1053,15 @@ export const Audit: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen text-left bg-white text-gray-900 leading-relaxed dir-ltr">
-      <SEO
-        title="Careers | Join the Aljumeiy Pharma Team"
-        description="Apply to join the Aljumeiy Pharma team. Complete our short application form covering your details, experience, skills, and job fit."
-      />
+    <div className="flex flex-col min-h-screen bg-white text-gray-900 leading-relaxed">
+      <SEO title={ui.seoTitle} description={ui.seoDesc} />
 
       {/* Hero Section - نفس هيدر الـ Home */}
       <section className="bg-[#171717] text-white py-20 lg:py-28 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
         <div className="absolute inset-0 z-0 overflow-hidden opacity-20" aria-hidden="true">
           <img src="/images/Home/hero.webp" alt="" className="w-full h-full object-cover" />
         </div>
-        <div className="absolute inset-0 bg-gradient-to-r from-[#171717] via-[#171717]/90 to-[#171717]/70 z-0" />
+        <div className="absolute inset-0 bg-gradient-to-r rtl:bg-gradient-to-l from-[#171717] via-[#171717]/90 to-[#171717]/70 z-0" />
 
         {/* توهج هادي بيتحرك */}
         <motion.div
@@ -809,23 +1074,22 @@ export const Audit: React.FC = () => {
         <div className="max-w-7xl mx-auto relative z-10">
           <ScrollReveal direction="up" className="max-w-3xl space-y-5">
             <span className="bg-[#C8202F] text-white text-xs font-bold px-4 py-1.5 rounded-full tracking-wider uppercase inline-block shadow-md">
-              Join Our Team
+              {ui.heroBadge}
             </span>
             <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white leading-tight">
-              Start Your Career Journey With Us
+              {ui.heroTitle}
             </h1>
             <p className="text-gray-300 text-base sm:text-lg leading-relaxed font-medium">
-              Fill in the details below accurately. We use your answers to understand your experience and skills and how well
-              they fit the role. Our recruitment team will contact you when you move to the next stage.
+              {ui.heroText}
             </p>
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <span className="inline-flex items-center gap-2 bg-white/10 border border-white/15 text-gray-200 text-xs font-semibold px-4 py-2 rounded-full">
                 <Lock size={14} className="text-[#C8202F]" aria-hidden="true" />
-                Your data is confidential and used for recruitment only
+                {ui.heroPrivacy}
               </span>
               <span className="inline-flex items-center gap-2 bg-white/10 border border-white/15 text-gray-200 text-xs font-semibold px-4 py-2 rounded-full">
                 <Check size={14} className="text-[#C8202F]" strokeWidth={3} aria-hidden="true" />
-                5 simple steps
+                {ui.heroSteps}
               </span>
             </div>
           </ScrollReveal>
@@ -872,18 +1136,18 @@ export const Audit: React.FC = () => {
                       </svg>
                     </motion.div>
                   </div>
-                  <h2 className="text-2xl font-black text-[#171717]" role="status">Application Submitted Successfully!</h2>
+                  <h2 className="text-2xl font-black text-[#171717]" role="status">{ui.successTitle}</h2>
                   <p className="text-gray-600 text-sm sm:text-base max-w-md mx-auto font-medium">
-                    Thank you for your interest in joining the Aljumeiy Pharma team. Please keep the application number shown below.
+                    {ui.successText}
                   </p>
-                  <p className="inline-block bg-gray-100 text-[#171717] font-black tracking-wider px-5 py-2.5 rounded-xl">{submittedId}</p>
+                  <p dir="ltr" className="inline-block bg-gray-100 text-[#171717] font-black tracking-wider px-5 py-2.5 rounded-xl">{submittedId}</p>
                   <div className="pt-3">
                     <button
                       type="button"
                       onClick={startNew}
                       className="border border-gray-300 text-gray-800 font-semibold px-6 py-3 rounded-xl min-h-[48px] hover:bg-gray-50 transition-colors"
                     >
-                      Submit another application
+                      {ui.submitAnother}
                     </button>
                   </div>
                 </motion.div>
@@ -892,17 +1156,16 @@ export const Audit: React.FC = () => {
               <>
                 {/* التابات */}
                 <div
-                  ref={tabsRef}
                   className="relative flex gap-2 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                  aria-label="Application steps"
+                  aria-label={ui.stepsLabel}
                 >
-                  {STEPS.map((s, i) => {
+                  {steps.map((s, i) => {
                     const active = i === page;
                     const reached = i <= maxReached;
                     const done = i < page;
                     return (
                       <button
-                        key={s.tab}
+                        key={STEPS_I18N.en[i].tab}
                         ref={(el) => {
                           tabRefs.current[i] = el;
                         }}
@@ -938,15 +1201,15 @@ export const Audit: React.FC = () => {
                 <div
                   className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-6"
                   role="progressbar"
-                  aria-label="Application progress"
+                  aria-label={ui.progressLabel}
                   aria-valuemin={1}
-                  aria-valuemax={STEPS.length}
+                  aria-valuemax={steps.length}
                   aria-valuenow={page + 1}
                 >
                   <motion.div
                     className="h-full bg-[#C8202F] rounded-full"
                     initial={false}
-                    animate={{ width: `${((page + 1) / STEPS.length) * 100}%` }}
+                    animate={{ width: `${((page + 1) / steps.length) * 100}%` }}
                     transition={{ duration: reduce ? 0.01 : 0.5, ease: EASE }}
                   />
                 </div>
@@ -958,7 +1221,7 @@ export const Audit: React.FC = () => {
                   className="relative overflow-hidden bg-white rounded-3xl shadow-xl border border-gray-200/80 p-6 sm:p-10"
                 >
                   <p className="sr-only" role="status" aria-live="polite">
-                    Step {page + 1} of {STEPS.length}: {STEPS[page].title}
+                    {ui.stepStatus(page + 1, steps.length, steps[page].title)}
                   </p>
 
                   {/* حقل فخ للبوتات: المستخدم الحقيقي مش بيشوفه */}
@@ -990,7 +1253,7 @@ export const Audit: React.FC = () => {
                   {sendError && (
                     <div
                       role="alert"
-                      className="mt-8 bg-red-50 border-l-4 border-[#C8202F] rounded-lg px-4 py-3 text-sm font-semibold text-[#C8202F]"
+                      className="mt-8 bg-red-50 border-s-4 border-[#C8202F] rounded-lg px-4 py-3 text-sm font-semibold text-[#C8202F]"
                     >
                       {sendError}
                     </div>
@@ -1005,8 +1268,8 @@ export const Audit: React.FC = () => {
                         page === 0 ? 'invisible' : ''
                       }`}
                     >
-                      <ArrowLeft size={18} aria-hidden="true" />
-                      <span>Back</span>
+                      <ArrowLeft size={18} aria-hidden="true" className="rtl:rotate-180" />
+                      <span>{ui.back}</span>
                     </button>
 
                     {page < LAST ? (
@@ -1016,8 +1279,12 @@ export const Audit: React.FC = () => {
                         onClick={next}
                         className="group inline-flex items-center justify-center gap-2 bg-[#C8202F] hover:bg-red-700 text-white font-bold px-8 py-3.5 rounded-xl min-h-[48px] shadow-lg hover:shadow-xl transition-all active:scale-95 focus:ring-4 focus:ring-red-200 outline-none max-sm:flex-1"
                       >
-                        <span>Next</span>
-                        <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" aria-hidden="true" />
+                        <span>{ui.next}</span>
+                        <ArrowRight
+                          size={18}
+                          className="rtl:rotate-180 ltr:group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform"
+                          aria-hidden="true"
+                        />
                       </button>
                     ) : (
                       <button
@@ -1029,12 +1296,16 @@ export const Audit: React.FC = () => {
                         {sending ? (
                           <>
                             <Loader2 size={18} className="animate-spin" aria-hidden="true" />
-                            <span>Sending...</span>
+                            <span>{ui.sending}</span>
                           </>
                         ) : (
                           <>
-                            <span>Submit Application</span>
-                            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" aria-hidden="true" />
+                            <span>{ui.submit}</span>
+                            <ArrowRight
+                              size={18}
+                              className="rtl:rotate-180 ltr:group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform"
+                              aria-hidden="true"
+                            />
                           </>
                         )}
                       </button>
@@ -1045,7 +1316,7 @@ export const Audit: React.FC = () => {
             )}
           </ScrollReveal>
 
-          {/* HR Workspace (نسخة تجريبية محلية) */}
+          {/* HR Workspace (نسخة تجريبية محلية، مقفولة ومش بتظهر للزوار) */}
           {SHOW_HR_WORKSPACE && (
             <ScrollReveal direction="up" className="mt-10">
               <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 sm:p-8">
