@@ -5,7 +5,6 @@ import SEO from '../components/SEO';
 import ScrollReveal from '../components/ScrollReveal';
 import { useLanguage } from '../context/LanguageContext';
 import { trackConversion } from '../lib/analytics';
-import { submitContactMessage, isSupabaseConfigured } from '../lib/supabase';
 
 // بيانات التواصل (لو عايزة تغيّريها في مكان واحد بس، انقليها لـ constants.ts)
 const PHONES = [
@@ -65,7 +64,7 @@ const TEXT = {
     phoneTitle: 'الهاتف المباشر',
     call: 'اتصل بـ',
     hqTitle: 'المقر الرئيسي',
-    address: 'القاهرة الجديدة، القاهرة، مصر',
+   address: '95 مساكن الشيراتون، القاهرة، مصر',
     map: 'عرض على خرائط جوجل',
     mapAria: 'فتح موقع Onboarding 4U على خرائط جوجل (يفتح في تبويب جديد)',
     formEyebrow: 'استفسار مباشر',
@@ -106,35 +105,23 @@ const Contact: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (sending) return;
-    if (honeypot.current?.value) return;
     setSending(true);
     setError(null);
     try {
-      if (isSupabaseConfigured) {
-        const { data, error: sbError } = await submitContactMessage({ ...form, lang });
-        if (sbError) throw sbError;
-        setRefId(data?.id || `CT-${Date.now().toString().slice(-8)}`);
-        trackConversion('contact');
-      } else if (import.meta.env.VITE_API_URL) {
-        const res = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...form, lang, website: honeypot.current?.value ?? '' }),
-        });
-        if (!res.ok) {
-          setError(res.status === 400 ? t.errorInvalid : res.status === 429 ? t.errorTooMany : t.errorServer);
-          return;
-        }
-        const json: { id?: string } = await res.json().catch(() => ({}));
-        setRefId(json.id || `CT-${Date.now().toString().slice(-8)}`);
-        trackConversion('contact');
-      } else {
-        await new Promise((r) => setTimeout(r, 600));
-        setRefId(`CT-${Date.now().toString().slice(-8)}`);
-        trackConversion('contact');
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, lang, website: honeypot.current?.value ?? '' }),
+      });
+      if (!res.ok) {
+        setError(res.status === 400 ? t.errorInvalid : res.status === 429 ? t.errorTooMany : t.errorServer);
+        return;
       }
+      const json: { id?: string } = await res.json().catch(() => ({}));
+      setRefId(json.id || `CT-${Date.now().toString().slice(-8)}`);
+      trackConversion('contact');
     } catch {
-      setError(t.errorServer);
+      setError(t.errorNetwork); // مشكلة اتصال: السيرفر مش شغّال أو النت قاطع
     } finally {
       setSending(false);
     }
