@@ -1,0 +1,18 @@
+services:
+  web:
+    build:
+      context: .
+      # Vite variables are baked into the JS bundle at build time (from .env)
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+    ports:
+      - "3000:3000"
+    # Email variables are read at runtime by the api/ handlers
+    environment:
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_TO: ${MAIL_TO:-hossamrana293@gmail.com}
+    restart: unless-stopped
