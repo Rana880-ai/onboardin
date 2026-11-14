@@ -1,31 +1,9 @@
-const nodemailer = require('nodemailer');
+// api/applications.js  →  POST /api/applications
+// بيستقبل طلب التوظيف: يفحصه، يحفظه في Supabase، ويبعته على الإيميل.
 
-const MAIL_TO = process.env.MAIL_TO || 'hossamrana293@gmail.com';
+import { esc, clean, oneLine, cairoNow, dbInsert, sendMail, emailShell, emailRow, refFromRow, fallbackRef } from './_lib/utils.js';
 
-function esc(s) {
-  if (s === undefined || s === null) return '—';
-  return String(s).replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[c]));
-}
-
-function createTransporter() {
-  const port = Number(process.env.SMTP_PORT || 465);
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port,
-    secure: port === 465,
-    auth: {
-      user: process.env.SMTP_USER || 'hossamrana293@gmail.com',
-      pass: process.env.SMTP_PASS,
-    },
-  });
-}
-
+// كل حقول الفورم بالترتيب، بعناوين مطابقة للأسئلة اللي في صفحة /audit
 const SECTIONS = [
   {
     title: 'البيانات الشخصية وبيانات الاتصال',
@@ -40,11 +18,11 @@ const SECTIONS = [
       ['governorate', 'المحافظة'],
       ['landmark', 'أقرب علامة مميزة'],
       ['job', 'الوظيفة المتقدم إليها'],
-      ['source', 'كيف سمعت عنا'],
+      ['source', 'كيف سمع عن الوظيفة'],
     ],
   },
   {
-    title: 'المؤهل الدراسي والخبرة السابقة',
+    title: 'المؤهل الدراسي والخبرة',
     fields: [
       ['qualification', 'أعلى مؤهل دراسي'],
       ['university', 'الجامعة / المعهد'],
@@ -55,144 +33,167 @@ const SECTIONS = [
       ['lastTitle', 'المسمى الوظيفي الأخير'],
       ['lastSalary', 'آخر راتب (جنيه)'],
       ['expectedSalary', 'الراتب المتوقع (جنيه)'],
-      ['availability', 'تاريخ إمكانية استلام العمل'],
-      ['currentlyWorking', 'هل تعمل حالياً؟'],
-      ['pharmacyYears', 'سنوات الخبرة في مجال الصيدليات'],
-      ['leavingReason', 'سبب ترك العمل السابق'],
-      ['referencePermission', 'هل يمكن الرجوع لجهة عملك السابقة للسؤال عنك؟'],
+      ['availability', 'مدة الإخطار / موعد الانضمام'],
+      ['currentlyWorking', 'هل يعمل حاليًا؟'],
+      ['pharmacyYears', 'سنوات الخبرة في الصيدليات'],
+      ['experienceDetails', 'ملخص الخبرة والمسؤوليات والإنجازات'],
+      ['leavingReason', 'سبب ترك العمل السابق / البحث عن فرصة جديدة'],
+      ['referencePermission', 'هل يمكن التواصل مع المدير السابق للسؤال عنه؟'],
     ],
   },
   {
-    title: 'المهارات والأنظمة',
+    title: 'المهارات والشهادات',
     fields: [
+      ['skills', 'المهارات المهنية'],
       ['english', 'مستوى اللغة الإنجليزية'],
-      ['computer', 'إجادة استخدام الحاسب الآلي'],
-      ['systems', 'برامج إدارة الصيدليات التي تجيدها'],
+      ['computer', 'إجادة الحاسب الآلي'],
+      ['systems', 'البرامج والأنظمة التي يجيدها'],
       ['certificates', 'الدورات والشهادات'],
       ['otherLanguages', 'لغات أخرى'],
+      ['portfolio', 'رابط LinkedIn / أعمال'],
+      ['files', 'أسماء الملفات المرفقة (الملفات نفسها لا تُرفع)'],
     ],
   },
   {
-    title: 'شروط وظروف العمل والورديات',
+    title: 'ملاءمة الوظيفة وظروف العمل',
     fields: [
-      ['shiftAbility', 'القدرة على العمل بنظام الورديات المتغيرة'],
-      ['shiftWork', 'تفضيل الوردية (صباحي / مسائي / ليلي)'],
-      ['commute', 'القدرة على الانتقال لمقر العمل المطلوب'],
-      ['fieldWork', 'القدرة على العمل الميداني إن تطلب الأمر'],
-      ['essentialDuties', 'القدرة على أداء المهام الوظيفية الأساسية'],
-      ['accommodation', 'هل تحتاج إلى سكن تابع للشركة؟'],
-      ['accommodationDetails', 'تفاصيل السكن'],
+      ['shiftAbility', 'هل يستطيع الالتزام بساعات العمل المحددة للوظيفة؟'],
+      ['shiftWork', 'هل يناسبه العمل بنظام الورديات؟'],
+      ['commute', 'هل يستطيع الانتقال لمقر العمل بانتظام؟'],
+      ['fieldWork', 'العمل الميداني / الزيارات: هل يناسبه؟'],
+      ['essentialDuties', 'هل يستطيع أداء المهام الأساسية للوظيفة؟'],
+      ['accommodation', 'هل يحتاج ترتيبات أو تسهيلات في بيئة العمل لأداء مهامه؟'],
+      ['accommodationDetails', 'تفاصيل الترتيبات المطلوبة (متعلقة بالعمل فقط)'],
+      ['safetyDiscussion', 'هل يرغب في مناقشة أمر يتعلق بسلامة أداء مهام معينة مع الموارد البشرية بسرية؟'],
+      ['workConditions', 'ملاحظات إضافية على ظروف العمل المناسبة'],
     ],
   },
   {
-    title: 'أسئلة إضافية وملاحظات المتقدم',
+    title: 'أسئلة شخصية وإقرار',
     fields: [
-      ['whyUs', 'لماذا ترغب في الانضمام إلى شركتنا؟'],
-      ['strengths', 'أهم نقاط قوتك التي تميزك'],
-      ['development', 'نقاط ترغب في تطويرها في نفسك'],
-      ['problemExample', 'موقف وتحدي صعب واجهته في العمل وكيف تصرفت'],
-      ['contactTime', 'الوقت المفضل للتواصل معك'],
+      ['whyUs', 'لماذا يرغب في الانضمام إلى Aljumeiy Pharma؟'],
+      ['strengths', 'أهم ثلاث نقاط قوة'],
+      ['development', 'المهارة التي يعمل على تطويرها حاليًا'],
+      ['problemExample', 'مشكلة واجهها في العمل وكيف تعامل معها'],
+      ['contactTime', 'الوقت المفضل للتواصل'],
+      ['assessment', 'هل يوافق على إجراء اختبار أو مقابلة عملية؟'],
+      ['accuracyConsent', 'إقرار بصحة البيانات'],
+      ['privacyConsent', 'الموافقة على استخدام البيانات لأغراض التوظيف فقط'],
     ],
   },
 ];
 
-module.exports = async (req, res) => {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
+const ARRAY_FIELDS = new Set(['skills', 'files']);
+const FLAG_FIELDS = new Set(['accuracyConsent', 'privacyConsent']);
+const REQUIRED = [
+  'fullName', 'phone', 'address', 'job', 'qualification', 'experienceYears', 'expectedSalary',
+  'experienceDetails', 'shiftAbility', 'essentialDuties', 'whyUs',
+];
 
-  const d = req.body || {};
-
-  if (d.website && String(d.website).trim()) {
-    return res.status(200).json({ ok: true });
-  }
-
-  const id = d.id || `AJ-${Date.now().toString().slice(-8)}`;
-  const submittedAt = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) + ' (توقيت القاهرة)';
-  const candidateName = d.fullName || d.name || 'متقدم جديد';
-  const candidateJob = d.job || 'طلب توظيف عام';
-
-  if (!process.env.SMTP_PASS) {
-    console.warn('[application email] SMTP_PASS not set. Skipping email send.');
-    return res.status(200).json({ ok: true, notice: 'SMTP_PASS not set' });
-  }
-
-  let tablesHtml = '';
+// ───────────── فحص وتنظيف: أي حقل مش في القايمة بيتتجاهل، وكل حقل له حد أقصى ─────────────
+function sanitize(body) {
+  const data = {};
   for (const section of SECTIONS) {
-    let rowsHtml = '';
-    for (const [key, label] of section.fields) {
-      const val = d[key];
-      if (val !== undefined && val !== null && String(val).trim() !== '') {
-        rowsHtml += `
-          <tr>
-            <th style="width: 38%; padding: 9px 12px; background: #fafafa; border-bottom: 1px solid #eeeeee; text-align: right; color: #555; font-size: 13px;">${esc(label)}</th>
-            <td style="padding: 9px 12px; border-bottom: 1px solid #eeeeee; color: #111; font-size: 13px; word-break: break-word;">${esc(val)}</td>
-          </tr>
-        `;
+    for (const [key] of section.fields) {
+      const value = body[key];
+      if (ARRAY_FIELDS.has(key)) {
+        data[key] = Array.isArray(value)
+          ? value.filter((v) => typeof v === 'string').slice(0, 40).map((v) => v.trim().slice(0, 200)).filter(Boolean)
+          : [];
+      } else if (FLAG_FIELDS.has(key)) {
+        data[key] = value === true;
+      } else {
+        data[key] = clean(value, 4000);
       }
     }
-    if (rowsHtml) {
-      tablesHtml += `
-        <div style="margin-top: 24px;">
-          <h3 style="margin: 0 0 10px; font-size: 15px; color: #171717; border-bottom: 2px solid #C8202F; padding-bottom: 6px; display: inline-block;">
-            ${esc(section.title)}
-          </h3>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px; border: 1px solid #eeeeee;">
-            ${rowsHtml}
-          </table>
-        </div>
-      `;
-    }
   }
+  if (REQUIRED.some((k) => !data[k])) return { error: 'Please complete all required fields.' };
+  if (!data.accuracyConsent || !data.privacyConsent) return { error: 'Please accept the declaration and privacy terms.' };
+  if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return { error: 'Please enter a valid email address.' };
+  return { data };
+}
 
-  const html = `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans Arabic', Arial, sans-serif; background-color: #f4f5f8; margin: 0; padding: 20px; color: #222; }
-    .card { max-width: 720px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.06); border: 1px solid #e7e9ed; }
-    .header { background: #171717; padding: 24px; color: #ffffff; border-bottom: 4px solid #C8202F; }
-    .header h1 { margin: 0 0 6px; font-size: 21px; color: #ffffff; }
-    .header p { margin: 0; font-size: 13px; color: #b3b3b3; }
-    .content { padding: 24px; }
-    .badge-bar { background: #fafafa; border: 1px solid #ebebeb; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 20px; }
-    .footer { text-align: center; padding: 18px; font-size: 12px; color: #777777; background: #fbfbfb; border-top: 1px solid #ebebeb; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h1>استمارة تقديم توظيف جديدة</h1>
-      <p>الوظيفة: <strong>${esc(candidateJob)}</strong> | الاسم: <strong>${esc(candidateName)}</strong></p>
-    </div>
-    <div class="content">
-      <div class="badge-bar">
-        <div>رقم الطلب المرجعي: <strong style="color: #C8202F;">${esc(id)}</strong></div>
-        <div style="color: #777;">${esc(submittedAt)}</div>
-      </div>
-      ${tablesHtml}
-    </div>
-    <div class="footer">
-      تم تسجيل هذا الطلب أوتوماتيكياً عبر منصة Onboarding 4U ومحفوظ في قاعدة البيانات.
-    </div>
-  </div>
-</body>
-</html>`;
+function display(key, value) {
+  if (FLAG_FIELDS.has(key)) return value ? 'نعم' : 'لا';
+  if (Array.isArray(value)) return value.join(', ');
+  return value;
+}
 
+function buildBody(data) {
+  return SECTIONS.map((section) => {
+    const rows = section.fields
+      .map(([key, label]) => [key, label, display(key, data[key])])
+      .filter(([, , v]) => v)
+      .map(([key, label, v]) => emailRow(label, v, key === 'phone' || key === 'whatsapp' || key === 'email' ? 'ltr' : 'auto'))
+      .join('');
+    if (!rows) return '';
+    return `<h3 style="margin:22px 0 8px;font-size:15px;color:#171717;border-bottom:2px solid #C8202F;padding-bottom:6px;display:inline-block;">${esc(section.title)}</h3>
+      <table style="width:100%;border-collapse:collapse;border:1px solid #eee;">${rows}</table>`;
+  }).join('');
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+
+  // فخ البوتات: لو الحقل المخفي اتملى نرد بنجاح وهمي من غير ما نعمل حاجة
+  if (typeof body.website === 'string' && body.website.trim()) return res.status(200).json({ ok: true, id: fallbackRef('AJ') });
+
+  const { data, error } = sanitize(body);
+  if (error) return res.status(400).json({ error });
+
+  // 1) الحفظ في قاعدة البيانات
+  let row = null;
+  let saved = false;
   try {
-    const transporter = createTransporter();
-    await transporter.sendMail({
-      from: `"Onboarding 4U Recruitment" <${process.env.SMTP_USER || 'hossamrana293@gmail.com'}>`,
-      to: MAIL_TO,
-      subject: `[طلب توظيف جديد] ${candidateName} - ${candidateJob} [${id}]`,
-      text: `استمارة تقديم جديدة من: ${candidateName}\nالوظيفة: ${candidateJob}\nالهاتف: ${d.phone || '—'}\nرقم المرجع: ${id}`,
-      html,
+    row = await dbInsert('applications', {
+      full_name: data.fullName,
+      phone: data.phone,
+      whatsapp: data.whatsapp || null,
+      email: data.email || null,
+      job: data.job,
+      governorate: data.governorate || null,
+      details: data, // كل الإجابات كاملة
     });
-
-    return res.status(200).json({ ok: true, id });
+    saved = true;
   } catch (err) {
-    console.error('[application email] sendMail error:', err);
-    return res.status(500).json({ error: 'Failed to send application email.' });
+    console.error('[applications] database error:', err.message);
   }
-};
+
+  const id = refFromRow('AJ', row) || fallbackRef('AJ');
+
+  // 2) الإيميل
+  let emailed = false;
+  try {
+    await sendMail({
+      subject: `[طلب توظيف جديد] ${oneLine(data.fullName)} - ${oneLine(data.job)} [${id}]`,
+      text: [
+        'طلب توظيف جديد من صفحة الموقع.',
+        `الاسم: ${oneLine(data.fullName)}`,
+        `الوظيفة: ${oneLine(data.job)}`,
+        `الهاتف: ${oneLine(data.phone)}`,
+        `رقم المرجع: ${id}`,
+        '',
+        'التفاصيل الكاملة في النسخة المنسّقة من الإيميل.',
+      ].join('\n'),
+      html: emailShell({
+        title: 'استمارة تقديم توظيف جديدة',
+        subtitle: `الوظيفة: <strong>${esc(data.job)}</strong> | الاسم: <strong>${esc(data.fullName)}</strong>`,
+        id,
+        submittedAt: cairoNow(),
+        bodyHtml: buildBody(data),
+        saved,
+      }),
+    });
+    emailed = true;
+  } catch (err) {
+    console.error('[applications] email error:', err.message);
+  }
+
+  // لو الحفظ والإيميل الاتنين فشلوا: لازم الزائر يعرف (مش نقوله "تم" والطلب ضايع)
+  if (!saved && !emailed) {
+    return res.status(500).json({ error: 'We could not send your application right now. Please try again in a few minutes.' });
+  }
+  return res.status(200).json({ ok: true, id });
+}
